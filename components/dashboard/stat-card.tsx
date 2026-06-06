@@ -1,4 +1,5 @@
 import type { LucideIcon } from "lucide-react";
+import { TrendingDown, TrendingUp } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -7,40 +8,48 @@ interface StatCardProps {
   label: string;
   value: string;
   delta?: string;
+  /** Direction of the delta arrow. Defaults to inferring from the sign of `delta`. */
+  deltaDirection?: "up" | "down";
+  /** Whether the delta should be styled as a positive change. Defaults to inferring from the sign of `delta`. */
+  deltaPositive?: boolean;
   icon: LucideIcon;
 }
 
-export function StatCard({ label, value, delta, icon: Icon }: StatCardProps) {
-  const isPositive = delta?.startsWith("+");
-  const isNegative = delta?.startsWith("-");
+export function StatCard({
+  label,
+  value,
+  delta,
+  deltaDirection,
+  deltaPositive,
+  icon: Icon,
+}: StatCardProps) {
+  const inferredDown = delta?.trim().startsWith("-");
+  const direction = deltaDirection ?? (inferredDown ? "down" : "up");
+  const isPositive = deltaPositive ?? !inferredDown;
+  const TrendIcon = direction === "down" ? TrendingDown : TrendingUp;
 
   return (
-    <Card className="flex flex-col gap-4 p-5">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+    <Card className="flex flex-col gap-3 p-5">
+      <div className="flex items-start justify-between">
+        <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">
           {label}
         </span>
-        <span className="flex size-7 items-center justify-center rounded-md border border-white/[0.06] bg-white/[0.02] text-zinc-400">
-          <Icon className="size-3.5" strokeWidth={2} />
-        </span>
+        <Icon className="size-4 text-zinc-600" strokeWidth={2} />
       </div>
-      <div className="flex items-baseline gap-2">
-        <span className="font-mono text-2xl font-semibold tracking-tight text-foreground">
-          {value}
+      <span className="font-mono text-4xl font-bold tracking-tight text-foreground">
+        {value}
+      </span>
+      {delta ? (
+        <span
+          className={cn(
+            "flex items-center gap-1 text-xs font-medium",
+            isPositive ? "text-[#8CFF2E]" : "text-red-400"
+          )}
+        >
+          <TrendIcon className="size-3.5" strokeWidth={2.25} />
+          {delta}
         </span>
-        {delta ? (
-          <span
-            className={cn(
-              "font-mono text-xs font-medium",
-              isPositive && "text-[#8CFF2E]",
-              isNegative && "text-red-400",
-              !isPositive && !isNegative && "text-zinc-500"
-            )}
-          >
-            {delta}
-          </span>
-        ) : null}
-      </div>
+      ) : null}
     </Card>
   );
 }
