@@ -1,10 +1,10 @@
 export default function LoginPage() {
   return (
-    <div className="space-y-2">
-      <h1 className="text-lg font-semibold tracking-tight text-[var(--text)]">
+    <div className="rounded-xl border border-white/[0.06] bg-[#0a0a0a] p-8">
+      <h1 className="text-xl font-semibold tracking-tight text-foreground">
         Login
       </h1>
-      <p className="text-sm text-gray-400">
+      <p className="mt-1.5 text-sm text-zinc-400">
         Sign in to your CourierX workspace.
       </p>
     </div>

@@ -1,36 +1,54 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CourierX Console
 
-## Getting Started
+> ⚠️ **Private repository.** Source-available dashboard for [CourierX](https://github.com/miransas/courierx-api).
 
-First, run the development server:
+The web dashboard for managing CourierX workspaces — API keys, send logs, domain verification, and analytics.
+
+Live at [console.courierx.io](https://console.courierx.io).
+
+## Stack
+
+- Next.js 16 (App Router)
+- TypeScript + Tailwind v4 + shadcn/ui
+- Connects to CourierX API (`api.courierx.io`)
+
+## Quick start
 
 ```bash
+git clone https://github.com/Miransas/courierx-console
+cd courierx-console
+npm install
+cp .env.example .env.local
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Architecture
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```
+console.courierx.io  → this repo
+       │
+       ▼ (HTTPS, JWT auth)
+api.courierx.io      → courierx-api (Rust)
+       │
+       ▼ (Postgres)
+[email queue]        → courierx-worker (Rust)
+       │
+       ▼
+[SES / Resend / SMTP]
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Related repos
 
-## Learn More
+| Repo | Visibility |
+|------|------------|
+| [courierx-web](https://github.com/sardorazimov/courierx-web) | Public |
+| [courierx-api](https://github.com/miransas/courierx-api) | Public |
+| [courierx-worker](https://github.com/miransas/courierx-worker) | Public |
 
-To learn more about Next.js, take a look at the following resources:
+## License
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Proprietary. All rights reserved.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+---
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Part of [Miransas](https://miransas.com).
