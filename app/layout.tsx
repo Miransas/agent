@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { IBM_Plex_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
+import { AuthProvider } from "@/components/provider/auth-provider";
+
 const plexSans = IBM_Plex_Sans({
   variable: "--font-plex-sans",
   subsets: ["latin"],
@@ -32,7 +34,7 @@ export default function RootLayout({
       className={`${plexSans.variable} ${jetBrainsMono.variable} h-full`}
     >
       <body className="min-h-full bg-background text-foreground antialiased">
-        {children}
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );

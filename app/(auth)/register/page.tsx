@@ -10,38 +10,48 @@ import { AuthBrandPanel } from "@/components/auth/auth-brand-panel";
 import { Logomark } from "@/components/brand/logomark";
 import { useAuth } from "@/components/provider/auth-provider";
 import { ApiError } from "@/lib/api";
+import Image from "next/image";
 
-const loginSchema = z.object({
+const registerSchema = z.object({
   email: z.string().email("Please enter a valid email"),
-  password: z.string().min(1, "Password is required"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+  name: z
+    .string()
+    .max(200, "Name must be 200 characters or fewer")
+    .optional()
+    .or(z.literal("")),
 });
 
-type LoginFormData = z.infer<typeof loginSchema>;
+type RegisterFormData = z.infer<typeof registerSchema>;
 
 const inputClass =
   "w-full rounded-lg border border-white/[0.08] bg-white/[0.02] px-4 py-3 text-sm text-foreground placeholder:text-zinc-500 transition-colors focus:border-[#8CFF2E]/40 focus:outline-none focus:ring-2 focus:ring-[#8CFF2E]/10";
 
-export default function LoginPage() {
-  const { login } = useAuth();
+export default function RegisterPage() {
+  const { register: registerUser } = useAuth();
   const [serverError, setServerError] = useState<string | null>(null);
   const {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
-  } = useForm<LoginFormData>({
-    resolver: zodResolver(loginSchema),
+  } = useForm<RegisterFormData>({
+    resolver: zodResolver(registerSchema),
   });
 
-  const onSubmit = async (data: LoginFormData) => {
+  const onSubmit = async (data: RegisterFormData) => {
     setServerError(null);
     try {
-      await login(data.email, data.password);
+      await registerUser(
+        data.email,
+        data.password,
+        data.name?.trim() || undefined
+      );
     } catch (err) {
       if (err instanceof ApiError) {
-        if (err.status === 401) {
-          setServerError("Invalid email or password.");
+        if (err.status === 409) {
+          setServerError("An account with this email already exists.");
         } else {
-          setServerError(err.message || "Invalid credentials");
+          setServerError(err.message || "Registration failed");
         }
       } else {
         setServerError("Something went wrong. Please try again.");
@@ -51,21 +61,21 @@ export default function LoginPage() {
 
   return (
     <div className="grid min-h-screen md:grid-cols-2">
-      <AuthBrandPanel variant="login" />
+      <AuthBrandPanel variant="register" />
 
       <div className="flex items-center justify-center bg-[#050505] p-6 md:p-12">
         <div className="w-full max-w-md space-y-8">
           <div className="mb-8 flex items-center gap-3 md:hidden">
-            <Logomark size={32} />
+            <Image src="/favicon/favicon.svg" alt="CourierX" width={32} height={32} />
             <span className="text-lg font-bold text-foreground">CourierX</span>
           </div>
 
           <div className="space-y-2">
             <h2 className="text-3xl font-bold tracking-tight text-foreground">
-              Sign in
+              Create your account
             </h2>
             <p className="text-base text-zinc-400">
-              Sign in to your CourierX workspace.
+              Start sending email from your own infrastructure.
             </p>
           </div>
 
@@ -98,25 +108,16 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <div className="mb-1.5 flex items-center justify-between">
-                <label
-                  htmlFor="password"
-                  className="block text-xs font-medium text-zinc-400"
-                >
-                  Password
-                </label>
-                {/* TODO: implement in 7D */}
-                <a
-                  href="#"
-                  className="text-xs text-zinc-500 transition-colors hover:text-foreground"
-                >
-                  Forgot password?
-                </a>
-              </div>
+              <label
+                htmlFor="password"
+                className="mb-1.5 block text-xs font-medium text-zinc-400"
+              >
+                Password
+              </label>
               <input
                 id="password"
                 type="password"
-                autoComplete="current-password"
+                autoComplete="new-password"
                 placeholder="••••••••"
                 aria-invalid={errors.password ? true : undefined}
                 className={inputClass}
@@ -125,6 +126,34 @@ export default function LoginPage() {
               {errors.password ? (
                 <p className="mt-1.5 text-xs text-red-400">
                   {errors.password.message}
+                </p>
+              ) : (
+                <p className="mt-1.5 text-xs text-zinc-500">
+                  At least 8 characters.
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label
+                htmlFor="name"
+                className="mb-1.5 flex items-center justify-between text-xs font-medium text-zinc-400"
+              >
+                <span>Name</span>
+                <span className="text-zinc-600">optional</span>
+              </label>
+              <input
+                id="name"
+                type="text"
+                autoComplete="name"
+                placeholder="Ada Lovelace"
+                aria-invalid={errors.name ? true : undefined}
+                className={inputClass}
+                {...register("name")}
+              />
+              {errors.name ? (
+                <p className="mt-1.5 text-xs text-red-400">
+                  {errors.name.message}
                 </p>
               ) : null}
             </div>
@@ -143,17 +172,17 @@ export default function LoginPage() {
               disabled={isSubmitting}
               className="w-full rounded-full bg-[#8CFF2E] px-6 py-3 font-semibold text-[#050505] shadow-[0_0_30px_-8px_rgba(140,255,46,0.4)] transition-colors hover:bg-[#8CFF2E]/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isSubmitting ? "Signing in…" : "Sign in"}
+              {isSubmitting ? "Creating…" : "Create account"}
             </button>
           </form>
 
           <p className="text-center text-sm text-zinc-500">
-            Don&apos;t have an account?{" "}
+            Already have an account?{" "}
             <Link
-              href="/register"
+              href="/login"
               className="font-medium text-foreground transition-colors hover:text-[#8CFF2E]"
             >
-              Sign up
+              Sign in
             </Link>
           </p>
         </div>

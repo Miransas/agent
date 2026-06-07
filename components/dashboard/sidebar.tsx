@@ -15,8 +15,14 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { useAuth } from "@/components/provider/auth-provider";
 import { useSidebarState } from "@/hooks/use-sidebar-state";
 import { cn } from "@/lib/utils";
+
+function avatarInitial(user: { name: string | null; email: string } | null) {
+  const source = user?.name?.trim() || user?.email || "";
+  return source ? source[0]!.toUpperCase() : "?";
+}
 
 interface NavItem {
   label: string;
@@ -45,6 +51,10 @@ const labelCollapsed = "max-w-0 opacity-0";
 export function Sidebar() {
   const pathname = usePathname();
   const { collapsed } = useSidebarState();
+  const { user, logout } = useAuth();
+  const initial = avatarInitial(user);
+  const displayName = user?.name?.trim() || user?.email || "";
+  const displayEmail = user?.email ?? "";
 
   return (
     <aside
@@ -166,30 +176,33 @@ export function Sidebar() {
         {collapsed ? (
           <button
             type="button"
+            onClick={logout}
             title="Sign out"
             aria-label="Sign out"
             className="flex w-full items-center justify-center rounded-md py-1.5 transition-colors hover:bg-white/[0.04]"
           >
             <div className="flex size-8 items-center justify-center rounded-full bg-white/[0.06] text-xs font-semibold text-zinc-300">
-              Y
+              {initial}
             </div>
           </button>
         ) : (
           <div className="flex items-center gap-2.5 rounded-md px-2 py-2">
             <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-xs font-semibold text-zinc-300">
-              Y
+              {initial}
             </div>
             <div className="min-w-0 flex-1">
               <div className="truncate text-xs font-medium text-foreground">
-                you@example.com
+                {displayName}
               </div>
               <div className="truncate text-[11px] text-zinc-500">
-                Personal account
+                {displayEmail}
               </div>
             </div>
             <button
               type="button"
+              onClick={logout}
               aria-label="Sign out"
+              title="Sign out"
               className="flex size-7 shrink-0 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-white/[0.04] hover:text-foreground"
             >
               <LogOut className="size-3.5" strokeWidth={2} />
