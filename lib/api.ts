@@ -74,6 +74,24 @@ export interface MeResponse {
   name: string | null;
 }
 
+export interface ApiKey {
+  id: string;
+  name: string;
+  key_prefix: string;
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
+export interface CreateApiKeyResponse {
+  id: string;
+  name: string;
+  /** Full plaintext key — shown once on creation. */
+  key: string;
+  key_prefix: string;
+  created_at: string;
+}
+
 export const api = {
   auth: {
     register: (data: { email: string; password: string; name?: string }) =>
@@ -87,5 +105,17 @@ export const api = {
         body: JSON.stringify(data),
       }),
     me: () => apiFetch<MeResponse>("/auth/me"),
+  },
+  apiKeys: {
+    list: () => apiFetch<{ keys: ApiKey[] }>("/v1/api-keys"),
+    create: (name: string) =>
+      apiFetch<CreateApiKeyResponse>("/v1/api-keys", {
+        method: "POST",
+        body: JSON.stringify({ name }),
+      }),
+    revoke: (id: string) =>
+      apiFetch<void>(`/v1/api-keys/${id}`, {
+        method: "DELETE",
+      }),
   },
 };
