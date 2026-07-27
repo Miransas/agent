@@ -16,7 +16,7 @@
     "next": "16.2.10",
     "radix-ui": "^1.6.7",
     "react": "19.2.8",
-    "react-dom": "19.2.7",
+    "react-dom": "19.2.8",
     "react-hook-form": "^7.83.0",
     "recharts": "^3.9.2",
     "shadcn": "^4.15.0",
