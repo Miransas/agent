@@ -1,0 +1,17 @@
+services:
+  voice-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: miransas-voice-agent
+    ports:
+      - "8000:8000"
+    environment:
+      OLLAMA_URL: http://host.docker.internal:11434/api/generate
+      OLLAMA_MODEL: llama3.1:8b
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+      TEMPERATURE: 0.7
+      MAX_TOKENS: 120
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

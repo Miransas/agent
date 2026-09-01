@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+echo "→ ruff check"
+uv run ruff check app tests
+echo "→ ruff format check"
+uv run ruff format --check app tests

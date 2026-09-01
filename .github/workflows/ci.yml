@@ -7,49 +7,38 @@ on:
     branches: [main]
 
 jobs:
-  lint:
-    name: Lint
+  backend-checks:
+    name: Python Backend Checks
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
-          node-version: "20"
-          cache: "npm"
+          version: "latest"
+          enable-cache: true
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install Python
+        run: uv python install 3.12
 
-      - name: Run ESLint
-        run: npm run lint
+      - name: Sync dependencies
+        run: uv sync --frozen
 
-  build:
-    name: Build
-    runs-on: ubuntu-latest
+      - name: Lint with ruff
+        run: uv run ruff check app tests
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Format check with ruff
+        run: uv run ruff format --check app tests
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
+      - name: Bytecode syntax check
+        run: uv run python -m compileall app
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build Next.js
-        run: npm run build
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: next-build
-          path: .next
-          retention-days: 1
+      - name: Import smoke test
+        run: |
+          uv run python - <<'PY'
+          import fastapi, pydantic, httpx, uvicorn
+          from app.server.api import app
+          from app.config import settings
+          print("✅ imports ok")
+          PY

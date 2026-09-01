@@ -26,6 +26,7 @@ The backend currently runs as a FastAPI service and is designed to work with the
 - Runtime / dependency management: uv
 - HTTP client: requests
 - Validation: Pydantic
+- Environment handling: python-dotenv
 
 ---
 
@@ -54,9 +55,13 @@ git clone https://github.com/Miransas/agent.git
 cd agent
 ```
 
-### 2. Install dependencies
+### 2. Install dependencies with uv
 
-The project dependencies are listed in the backend requirements file.
+```bash
+uv sync --dev
+```
+
+If you prefer to work directly in the backend folder, this also works:
 
 ```bash
 cd backend
@@ -65,16 +70,39 @@ source .venv/bin/activate
 uv pip install -r requirements.txt
 ```
 
-### 3. Start the API server
+### 3. Create environment variables
+
+Copy the example config and adjust values if needed:
 
 ```bash
-uv run python main.py
+cp .env.example .env
+```
+
+### 4. Start the API server
+
+```bash
+uv run python backend/main.py
 ```
 
 The server will run at:
 
 ```text
 http://127.0.0.1:8000
+```
+
+---
+
+## Environment Variables
+
+The app reads configuration from environment variables. You can configure these values in `.env`:
+
+```env
+OLLAMA_URL=http://localhost:11434/api/generate
+OLLAMA_MODEL=llama3.1:8b
+APP_HOST=127.0.0.1
+APP_PORT=8000
+TEMPERATURE=0.7
+MAX_TOKENS=120
 ```
 
 ---
@@ -120,8 +148,14 @@ agent/
 │   └── requirements.txt
 ├── .container/
 ├── .github/
+│   └── workflows/
 ├── hooks/
 ├── scripts/
+├── .dockerignore
+├── .env.example
+├── docker-compose.yml
+├── Dockerfile
+├── pyproject.toml
 ├── AGENTS.md
 ├── CLAUDE.md
 ├── LICENSE
@@ -133,7 +167,10 @@ agent/
 
 - `backend/main.py`: FastAPI application and Ollama request flow
 - `backend/prompt.py`: voice system prompt used to guide the assistant tone and style
-- `backend/requirements.txt`: Python dependencies
+- `pyproject.toml`: uv-based Python configuration and dependency metadata
+- `.env.example`: environment variable template
+- `Dockerfile`: container image setup
+- `docker-compose.yml`: local docker orchestration example
 
 ---
 
@@ -151,11 +188,27 @@ This behavior is controlled via the system prompt in `backend/prompt.py`.
 
 ---
 
+## Docker
+
+You can run the project in a container with Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+This exposes the API on:
+
+```text
+http://localhost:8000
+```
+
+---
+
 ## Notes
 
 - This project is intentionally local-first and is designed to work with a running Ollama instance.
 - The current endpoint is a minimal backend layer and can be extended for TTS, STT, conversation memory, tool calls, or integration with downstream services.
-- The `.container` folder is currently reserved for container-related assets and can be used for Docker or devcontainer setup in future iterations.
+- The `.container` folder is reserved for container-related assets and can be used for future infrastructure or devcontainer configuration.
 
 ---
 
@@ -166,3 +219,5 @@ This project is released under the MIT License.
 ---
 
 Built with passion by the Miransas team.
+
+
