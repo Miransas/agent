@@ -8,3 +8,9 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     status: str
     response: str
+
+
+class VoiceResponse(BaseModel):
+    status: str
+    transcript: str
+    response: str
