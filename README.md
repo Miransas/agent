@@ -81,7 +81,7 @@ cp .env.example .env
 ### 4. Start the API server
 
 ```bash
-uv run python backend/main.py
+uv run uvicorn app.server.api:app --reload --port 8000
 ```
 
 The server will run at:
