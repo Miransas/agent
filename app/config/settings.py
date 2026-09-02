@@ -16,8 +16,12 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 120
 
     # STT (faster-whisper)
-    stt_model_size: str = "small"  # tiny | base | small | medium | large-v3
-    stt_language: str = ""  # "" = otomatik; "tr" / "uz" sabitlenebilir
+    stt_model_size: str = "small"
+    stt_language: str = ""
+
+    # Memory
+    memory_max_messages: int = 20  # context penceresi (8b icin guvenli)
+    memory_ttl_seconds: int = 3600  # 1 saat sonra oturum unutulur
 
     # Server
     host: str = "127.0.0.1"
