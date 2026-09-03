@@ -2,6 +2,7 @@
 
 import json
 import logging
+from collections.abc import AsyncGenerator
 
 from app.llm import client as llm_client
 from app.tools import registry
@@ -21,13 +22,13 @@ async def run(
     messages: list[dict[str, str]],
     session_id: str,
 ) -> tuple[str, list[dict]]:
-    """Agent'i calistirir. Returns (final_text, full_history)."""
+    """Agent'i calistirir (non-streaming). Returns (final_text, full_history)."""
     tools_schema = registry.get_tools_schema()
     history = list(messages)
 
     for iteration in range(MAX_ITERATIONS):
         log.info("=== Agent iteration %d, %d messages ===", iteration, len(history))
-        response_data = await llm_client.generate(history, tools=tools_schema)
+        response_data = await llm_client.generate(history, tools=tools_schema, stream=False)
 
         if "choices" not in response_data or not response_data["choices"]:
             log.error("Invalid response: %s", response_data)
@@ -78,3 +79,53 @@ async def run(
     last = next((m for m in reversed(history) if m["role"] == "assistant"), None)
     fallback = (last or {}).get("content") or "Uzgunum, islemi tamamlayamadim."
     return fallback.strip(), history
+
+
+async def run_stream(
+    messages: list[dict[str, str]],
+    session_id: str,
+) -> AsyncGenerator[dict, None]:
+    """Agent'i streaming modda calistirir.
+
+    Conversational sorularda streaming (tools YOK), tool-requiring sorularda non-streaming.
+
+    Yields: {"type": "token", "content": "..."} veya {"type": "done", "full_response": "..."}
+    """
+    last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+
+    # Tool gerektiren soru mu? (basit keyword check)
+    tool_keywords = ["menü", "sipariş", "sepet", "burger", "pizza", "cola", "randevu"]
+    needs_tools = any(kw in last_user.lower() for kw in tool_keywords)
+
+    if needs_tools:
+        log.info("Tool-requiring query detected, using non-streaming")
+        final_text, _history = await run(messages, session_id)
+        yield {"type": "done", "full_response": final_text}
+        return
+
+    # Conversational soru — streaming (tools YOK, model tool call yapamaz)
+    log.info("Conversational query, streaming WITHOUT tools")
+    full_response = ""
+
+    stream = await llm_client.generate(messages, tools=None, stream=True)
+
+    chunk_count = 0
+    async for chunk in stream:
+        chunk_count += 1
+
+        if "choices" not in chunk or not chunk["choices"]:
+            continue
+
+        choice = chunk["choices"][0]
+        delta = choice.get("delta", {})
+        content = delta.get("content")
+
+        if content:
+            full_response += content
+            log.debug("Streamed token: %r", content)
+            yield {"type": "token", "content": content}
+
+    log.info(
+        "Stream finished, total chunks: %d, response length: %d", chunk_count, len(full_response)
+    )
+    yield {"type": "done", "full_response": full_response}

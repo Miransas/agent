@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import uuid
@@ -5,6 +6,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from httpx import ConnectError, TimeoutException
 from starlette.staticfiles import StaticFiles
 
@@ -42,6 +44,40 @@ async def generate_voice_response(request: ChatRequest) -> ChatResponse:
     session_id = request.session_id or store.new_session_id()
     reply = await _run_agent(request.prompt, session_id)
     return ChatResponse(status="success", response=reply, session_id=session_id)
+
+
+@app.post("/api/chat/stream")
+async def stream_chat(request: ChatRequest):
+    """SSE (Server-Sent Events) ile streaming response."""
+    session_id = request.session_id or store.new_session_id()
+
+    async def event_generator():
+        history = store.get(session_id)
+        messages = [
+            {"role": "system", "content": VOICE_SYSTEM_PROMPT},
+            *history,
+            {"role": "user", "content": request.prompt},
+        ]
+
+        full_response = ""
+        async for event in agent.run_stream(messages, session_id=session_id):
+            if event["type"] == "token":
+                full_response += event["content"]
+                yield f"data: {json.dumps({'token': event['content']})}\n\n"
+            elif event["type"] == "done":
+                # Session'a kaydet
+                store.add(session_id, "user", request.prompt)
+                store.add(session_id, "assistant", event["full_response"])
+                yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @app.post("/api/voice", response_model=VoiceResponse)
