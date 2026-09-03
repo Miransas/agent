@@ -102,23 +102,36 @@ async def run_stream(
     session_id: str,
     detected_lang: str = "tr",
 ) -> AsyncGenerator[dict, None]:
-    """Agent'i streaming modda calistirir."""
+    """Agent'i streaming modda calistirir.
+
+    Tool-requiring sorularda: tool call yap, sonra final response'u streaming olarak dön.
+    Conversational sorularda: direkt streaming.
+    """
     last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
 
-    # Tool gerektiren soru mu? (basit keyword check)
+    # Tool gerektiren soru mu?
     tool_keywords = ["menü", "sipariş", "sepet", "burger", "pizza", "cola", "randevu"]
     needs_tools = any(kw in last_user.lower() for kw in tool_keywords)
 
     if needs_tools:
-        log.info("Tool-requiring query detected, using non-streaming")
+        log.info("Tool-requiring query, running tools then streaming final response")
+        # Tool call'ları non-streaming ile yap
         final_text, _history = await run(messages, session_id, detected_lang=detected_lang)
+        # Final response'u tek seferde gönder (tool sonrası LLM text üretiyor)
         yield {"type": "done", "full_response": final_text}
         return
 
-    # Conversational soru — streaming (tools YOK, model tool call yapamaz)
-    log.info("Conversational query, streaming WITHOUT tools")
-    full_response = ""
+    # Conversational soru — streaming
+    log.info("Conversational query, streaming")
 
+    # Language hint ekle
+    hint = LANG_HINT.get(detected_lang, LANG_HINT["tr"])
+    for i in range(len(messages) - 1, -1, -1):
+        if messages[i]["role"] == "user":
+            messages[i]["content"] = f"{hint}\n\n{messages[i]['content']}"
+            break
+
+    full_response = ""
     stream = await llm_client.generate(messages, tools=None, stream=True)
 
     chunk_count = 0
@@ -137,7 +150,5 @@ async def run_stream(
             log.debug("Streamed token: %r", content)
             yield {"type": "token", "content": content}
 
-    log.info(
-        "Stream finished, total chunks: %d, response length: %d", chunk_count, len(full_response)
-    )
+    log.info("Stream finished, total chunks: %d", chunk_count)
     yield {"type": "done", "full_response": full_response}

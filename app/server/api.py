@@ -1,7 +1,9 @@
+import asyncio
 import base64
 import json
 import logging
 import os
+import time
 import uuid
 from contextlib import asynccontextmanager
 from typing import Annotated
@@ -25,7 +27,21 @@ async def lifespan(app: FastAPI):
     stt.warmup()
     os.makedirs("static/audio", exist_ok=True)
     app.mount("/static", StaticFiles(directory="static"), name="static")
+    # TTS warmup: edge-tts connection'ı önceden kur (ilk istek hızlı olsun)
+    warmup_task = asyncio.create_task(_warmup_tts())
     yield
+    warmup_task.cancel()
+
+
+async def _warmup_tts():
+    """edge-tts'e boş request gönder, DNS + TLS handshake bir kerelik olsun."""
+    from app.voice import tts
+
+    try:
+        await tts.synthesize(" ", language="tr")
+        log.info("✅ TTS warmed up")
+    except Exception as exc:
+        log.warning("TTS warmup failed: %s", exc)
 
 
 app = FastAPI(
@@ -86,7 +102,9 @@ async def voice_chat(
         raise HTTPException(status_code=400, detail="Bos ses dosyasi")
 
     sid = session_id or store.new_session_id()
+    request_start = time.monotonic()
     transcript, detected_lang = await stt.transcribe(data)
+    print("⏱️  STT: %.2fs (lang=%s)", time.monotonic() - request_start, detected_lang)
     if not transcript:
         return VoiceResponse(
             status="success", transcript="", response="", session_id=sid, audio_url=None
@@ -123,7 +141,9 @@ async def voice_chat_stream(
         raise HTTPException(status_code=400, detail="Bos ses dosyasi")
 
     sid = session_id or store.new_session_id()
+    request_start = time.monotonic()
     transcript, detected_lang = await stt.transcribe(data)
+    print("⏱️  STT: %.2fs (lang=%s)", time.monotonic() - request_start, detected_lang)
     if not transcript:
 
         async def empty_stream():
@@ -143,17 +163,25 @@ async def voice_chat_stream(
 
         full_response = ""
         sentence_buffer = ""
+        first_token_logged = False
+        first_audio_logged = False
 
         async for event in agent.run_stream(messages, session_id=sid, detected_lang=detected_lang):
             if event["type"] == "token":
+                if not first_token_logged:
+                    print("⏱️  First token: %.2fs", time.monotonic() - request_start)
+                    first_token_logged = True
                 sentence_buffer += event["content"]
 
-                if any(
-                    sentence_buffer.rstrip().endswith(p) for p in [".", "?", "!", "。", "？", "！"]
-                ):
+                if _should_flush_sentence(sentence_buffer):
                     async for audio_chunk in tts.synthesize_stream(
                         sentence_buffer, language=tts_lang
                     ):
+                        if not first_audio_logged:
+                            log.info(
+                                "⏱️  First audio chunk: %.2fs", time.monotonic() - request_start
+                            )
+                            first_audio_logged = True
                         audio_b64 = base64.b64encode(audio_chunk).decode("utf-8")
                         yield f"data: {json.dumps({'audio': audio_b64})}\n\n"
 
@@ -186,6 +214,23 @@ async def voice_chat_stream(
 async def clear_session(session_id: str) -> dict[str, str]:
     store.clear(session_id)
     return {"status": "cleared", "session_id": session_id}
+
+
+def _should_flush_sentence(buffer: str) -> bool:
+    """Akıllı cümle detection — ilk audio chunk'ı erken gönderir.
+
+    - Nokta/soru/unlem → her zaman böl
+    - Virgül + 8+ kelime → böl (uzun cümle bekletme)
+    - 15+ kelime → punctuation beklemeden böl
+    """
+    text = buffer.strip()
+    if not text:
+        return False
+    if any(text.endswith(p) for p in [".", "?", "!", "。", "？", "！"]):
+        return True
+    if text.endswith(",") and len(text.split()) >= 8:
+        return True
+    return len(text.split()) >= 15
 
 
 def _resolve_tts_lang(detected_lang: str) -> str:
