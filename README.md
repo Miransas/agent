@@ -1,42 +1,54 @@
 # Miransas Voice Agent
 
-Self-hosted voice AI agent for businesses — answers calls, takes orders,
-books appointments. LLaMA-3.1 8B (Ollama) + faster-whisper STT.
-Part of the Miralas ecosystem (own TTS & voice-clone models, native Uzbek/Turkish).
+Miransas is a self-hosted voice AI backend for businesses. It handles natural
+conversation, voice input, orders, appointments, and session memory through a
+FastAPI service powered by Ollama and LLaMA 3.1 8B. The system is designed for
+Turkish and Uzbek voice experiences, with a native Rust core for fast HTTP,
+streaming, and session operations.
 
-## Run
+## Run Locally
 
-    # one-time
-    brew install ollama ffmpeg
-    ollama pull llama3.1:8b
+Requirements: Python 3.12+, `uv`, Rust, Ollama, and FFmpeg.
 
-    # terminal 1
-    ollama serve
+```bash
+brew install ollama ffmpeg
+ollama pull llama3.1:8b
+ollama serve
+```
 
-    # terminal 2
-    uv sync
-    uv run uvicorn app.server.api:app --reload --port 8000
+In a second terminal:
 
-## Try
+```bash
+uv sync
+uv run uvicorn app.server.api:app --reload --port 8000
+```
 
-    curl -s localhost:8000/health
+The API is available at `http://localhost:8000`. Check it with:
 
-    curl -s -X POST localhost:8000/api/chat \
-      -H 'Content-Type: application/json' \
-      -d '{"prompt":"Menünüzde neler var?"}'
+```bash
+curl localhost:8000/health
+curl -X POST localhost:8000/api/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"What is on your menu?"}'
+curl -X POST localhost:8000/api/voice -F "audio=@test.wav"
+```
 
-    curl -s -X POST localhost:8000/api/voice -F "audio=@test.wav"
+## Rust Optimization
 
-## What works
+The Rust crate (`rust/`) provides the performance-sensitive core through
+PyO3. Build its optimized release profile with:
 
-- text chat + voice input (STT)
-- conversation memory (sessions)
-- tool calling: menu, cart, orders, appointments
+```bash
+cargo build --manifest-path rust/Cargo.toml --release
+```
 
-## Coming soon
+Release builds use maximum compiler optimization (`opt-level = 3`) and link-time
+optimization (`lto = true`). Use this build for production workloads; use the
+default debug build while developing.
 
-TTS output, streaming, phone integration, Redis memory.
+## Core Capabilities
 
-
-
-
+- Text chat, streaming responses, and voice conversations
+- Faster-Whisper speech-to-text and Edge TTS audio responses
+- Session-based conversation memory
+- Business tools for menus, carts, orders, and appointments

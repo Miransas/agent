@@ -2,22 +2,23 @@
 
 import io
 import logging
+from collections.abc import AsyncGenerator
 
 import edge_tts
 
 log = logging.getLogger("miralas.tts")
 
-# Dil → ses mapping (Türkçe, İngilizce, Özbekçe, Rusça)
+# Dil → ses mapping (kadın sesleri ağırlıklı)
 VOICE_MAP = {
-    "tr": "tr-TR-AhmetNeural",  # Erkek ses
-    "en": "en-US-AriaNeural",
-    "uz": "uz-UZ-MadinaNeural",
-    "ru": "ru-RU-DmitryNeural",
+    "tr": "tr-TR-EmelNeural",  # Kadın sesi (doğal, sıcak ton)
+    "en": "en-GB-SoniaNeural",  # Kadın sesi (British accent, profesyonel)
+    "uz": "uz-UZ-MadinaNeural",  # Kadın sesi (Özbekçe native)
+    "ru": "ru-RU-SvetlanaNeural",  # Kadın sesi (Rusça native)
 }
 
 
 async def synthesize(text: str, language: str = "tr") -> bytes:
-    """Text → WAV bytes."""
+    """Text → audio bytes (non-streaming)."""
     voice = VOICE_MAP.get(language, VOICE_MAP["tr"])
     log.info("TTS: lang=%s voice=%s text=%r", language, voice, text[:50])
 
@@ -31,3 +32,18 @@ async def synthesize(text: str, language: str = "tr") -> bytes:
 
     audio_buffer.seek(0)
     return audio_buffer.read()
+
+
+async def synthesize_stream(text: str, language: str = "tr") -> AsyncGenerator[bytes, None]:
+    """Text → audio chunks (streaming).
+
+    Yields: audio bytes (MP3 chunks)
+    """
+    voice = VOICE_MAP.get(language, VOICE_MAP["tr"])
+    log.info("TTS streaming: lang=%s voice=%s text=%r", language, voice, text[:50])
+
+    communicate = edge_tts.Communicate(text, voice)
+
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            yield chunk["data"]
