@@ -17,3 +17,4 @@ class VoiceResponse(BaseModel):
     transcript: str
     response: str
     session_id: str
+    audio_url: str | None = None

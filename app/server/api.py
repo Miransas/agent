@@ -1,9 +1,12 @@
 import logging
+import os
+import uuid
 from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from httpx import ConnectError, TimeoutException
+from starlette.staticfiles import StaticFiles
 
 from app.core import agent
 from app.core.types import ChatRequest, ChatResponse, VoiceResponse
@@ -17,6 +20,8 @@ log = logging.getLogger("miralas.agent")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     stt.warmup()
+    os.makedirs("static/audio", exist_ok=True)
+    app.mount("/static", StaticFiles(directory="static"), name="static")
     yield
 
 
@@ -44,6 +49,8 @@ async def voice_chat(
     audio: Annotated[UploadFile, File(...)],
     session_id: Annotated[str | None, Form()] = None,
 ) -> VoiceResponse:
+    from app.voice import tts
+
     data = await audio.read()
     if not data:
         raise HTTPException(status_code=400, detail="Bos ses dosyasi")
@@ -54,7 +61,18 @@ async def voice_chat(
         return VoiceResponse(status="success", transcript="", response="", session_id=sid)
 
     reply = await _run_agent(transcript, sid)
-    return VoiceResponse(status="success", transcript=transcript, response=reply, session_id=sid)
+
+    # TTS: text → audio
+    audio_bytes = await tts.synthesize(reply, language="tr")
+    filename = f"{uuid.uuid4().hex[:8]}.mp3"
+    filepath = f"static/audio/{filename}"
+    with open(filepath, "wb") as f:
+        f.write(audio_bytes)
+
+    audio_url = f"/static/audio/{filename}"
+    return VoiceResponse(
+        status="success", transcript=transcript, response=reply, session_id=sid, audio_url=audio_url
+    )
 
 
 @app.delete("/api/session/{session_id}")
