@@ -36,3 +36,7 @@ Part of the Miralas ecosystem (own TTS & voice-clone models, native Uzbek/Turkis
 ## Coming soon
 
 TTS output, streaming, phone integration, Redis memory.
+
+
+
+
