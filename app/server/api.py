@@ -5,8 +5,8 @@ from typing import Annotated
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from httpx import ConnectError, TimeoutException
 
+from app.core import agent
 from app.core.types import ChatRequest, ChatResponse, VoiceResponse
-from app.llm import client as llm_client
 from app.llm.prompts import VOICE_SYSTEM_PROMPT
 from app.memory.store import store
 from app.voice import stt
@@ -16,13 +16,13 @@ log = logging.getLogger("miralas.agent")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    stt.warmup()  # Whisper'i arka planda yukle
+    stt.warmup()
     yield
 
 
 app = FastAPI(
     title="Miransas Voice Agent Core",
-    version="0.3.0",
+    version="0.4.0",
     lifespan=lifespan,
 )
 
@@ -35,7 +35,7 @@ async def health() -> dict[str, str]:
 @app.post("/api/chat", response_model=ChatResponse)
 async def generate_voice_response(request: ChatRequest) -> ChatResponse:
     session_id = request.session_id or store.new_session_id()
-    reply = await _ask_llm(request.prompt, session_id)
+    reply = await _run_agent(request.prompt, session_id)
     return ChatResponse(status="success", response=reply, session_id=session_id)
 
 
@@ -53,7 +53,7 @@ async def voice_chat(
     if not transcript:
         return VoiceResponse(status="success", transcript="", response="", session_id=sid)
 
-    reply = await _ask_llm(transcript, sid)
+    reply = await _run_agent(transcript, sid)
     return VoiceResponse(status="success", transcript=transcript, response=reply, session_id=sid)
 
 
@@ -63,7 +63,7 @@ async def clear_session(session_id: str) -> dict[str, str]:
     return {"status": "cleared", "session_id": session_id}
 
 
-async def _ask_llm(user_message: str, session_id: str) -> str:
+async def _run_agent(user_message: str, session_id: str) -> str:
     history = store.get(session_id)
     messages = [
         {"role": "system", "content": VOICE_SYSTEM_PROMPT},
@@ -71,7 +71,7 @@ async def _ask_llm(user_message: str, session_id: str) -> str:
         {"role": "user", "content": user_message},
     ]
     try:
-        reply = await llm_client.generate(messages)
+        reply, _full_history = await agent.run(messages, session_id=session_id)
     except ConnectError as exc:
         log.error("LLM server unreachable: %s", exc)
         raise HTTPException(
@@ -82,9 +82,11 @@ async def _ask_llm(user_message: str, session_id: str) -> str:
         log.error("LLM timeout: %s", exc)
         raise HTTPException(status_code=504, detail="LLM zaman asimi.") from exc
     except Exception as exc:
-        log.exception("LLM call failed")
+        log.exception("Agent run failed")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
+    # Sadece user + assistant mesajlarini session'a kaydet
     store.add(session_id, "user", user_message)
     store.add(session_id, "assistant", reply)
+
     return reply
