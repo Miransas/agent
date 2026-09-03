@@ -11,6 +11,13 @@ log = logging.getLogger("miralas.agent")
 
 MAX_ITERATIONS = 4
 
+LANG_HINT = {
+    "tr": "[Sistem: Müşteri TÜRKÇE konuşuyor. Yanıtın TAMAMEN Türkçe olmalı.]",
+    "en": "[System: Customer speaks ENGLISH. Your response MUST be entirely in English.]",
+    "uz": "[Tizim: Mijoz O'ZBEKCHA gaplashmoqda. Javobingiz TO'LIQ o'zbek tilida bo'lishi kerak.]",
+    "ru": "[Система: Клиент говорит по-РУССКИ. Ваш ответ ДОЛЖЕН быть полностью на русском.]",
+}
+
 MENU_TRIGGERS = ["menü", "menu", "ne var", "ürün", "urun", "satıyor", "ne sunuyorsunuz"]
 
 
@@ -21,10 +28,19 @@ def _needs_menu_tool(user_message: str) -> bool:
 async def run(
     messages: list[dict[str, str]],
     session_id: str,
+    detected_lang: str = "tr",
 ) -> tuple[str, list[dict]]:
     """Agent'i calistirir (non-streaming). Returns (final_text, full_history)."""
     tools_schema = registry.get_tools_schema()
     history = list(messages)
+
+    # Language hint'i son user message'a prepend et
+    hint = LANG_HINT.get(detected_lang, LANG_HINT["tr"])
+    for i in range(len(history) - 1, -1, -1):
+        if history[i]["role"] == "user":
+            history[i]["content"] = f"{hint}\n\n{history[i]['content']}"
+            log.info("Language hint injected: %s", detected_lang)
+            break
 
     for iteration in range(MAX_ITERATIONS):
         log.info("=== Agent iteration %d, %d messages ===", iteration, len(history))
@@ -84,13 +100,9 @@ async def run(
 async def run_stream(
     messages: list[dict[str, str]],
     session_id: str,
+    detected_lang: str = "tr",
 ) -> AsyncGenerator[dict, None]:
-    """Agent'i streaming modda calistirir.
-
-    Conversational sorularda streaming (tools YOK), tool-requiring sorularda non-streaming.
-
-    Yields: {"type": "token", "content": "..."} veya {"type": "done", "full_response": "..."}
-    """
+    """Agent'i streaming modda calistirir."""
     last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
 
     # Tool gerektiren soru mu? (basit keyword check)
@@ -99,7 +111,7 @@ async def run_stream(
 
     if needs_tools:
         log.info("Tool-requiring query detected, using non-streaming")
-        final_text, _history = await run(messages, session_id)
+        final_text, _history = await run(messages, session_id, detected_lang=detected_lang)
         yield {"type": "done", "full_response": final_text}
         return
 

@@ -30,7 +30,7 @@ def warmup() -> None:
     threading.Thread(target=_get_model, daemon=True).start()
 
 
-def _transcribe_bytes(audio: bytes) -> str:
+def _transcribe_bytes(audio: bytes) -> tuple[str, str]:
     segments, info = _get_model().transcribe(
         io.BytesIO(audio),
         language=settings.stt_language or None,
@@ -38,15 +38,19 @@ def _transcribe_bytes(audio: bytes) -> str:
         vad_filter=True,
     )
     text = " ".join(seg.text for seg in segments).strip()
+    detected_lang = info.language
     log.info(
         "STT: lang=%s (%.2f) text=%r",
-        info.language,
+        detected_lang,
         info.language_probability,
         text,
     )
-    return text
+    return text, detected_lang
 
 
-async def transcribe(audio: bytes) -> str:
-    """Blocking Whisper cagrisini thread pool'da calistirir."""
+async def transcribe(audio: bytes) -> tuple[str, str]:
+    """Blocking Whisper cagrisini thread pool'da calistirir.
+
+    Returns: (transcript, detected_language)
+    """
     return await asyncio.to_thread(_transcribe_bytes, audio)
