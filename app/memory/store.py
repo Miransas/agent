@@ -9,6 +9,7 @@ from collections import deque
 
 try:
     import miralas_core
+
     _RUST_AVAILABLE = True
 except ImportError:
     _RUST_AVAILABLE = False
@@ -20,7 +21,7 @@ class SessionStore:
     def __init__(self, ttl_seconds: int, max_turns: int) -> None:
         self._ttl = ttl_seconds
         self._max_messages = max_turns * 2  # user + assistant
-        
+
         if _RUST_AVAILABLE:
             print("✅ Session store: Rust (DashMap)")
             self._rust_mode = True
@@ -64,12 +65,17 @@ class SessionStore:
             else:
                 payload = json.loads(data)
                 messages = deque(payload.get("messages", []), maxlen=self._max_messages)
-            
+
             messages.append({"role": role, "content": content})
-            miralas_core.session_set(session_id, json.dumps({
-                "ts": time.monotonic(),
-                "messages": list(messages),
-            }))
+            miralas_core.session_set(
+                session_id,
+                json.dumps(
+                    {
+                        "ts": time.monotonic(),
+                        "messages": list(messages),
+                    }
+                ),
+            )
         else:
             entry = self._sessions.get(session_id)
             if entry is None:

@@ -9,11 +9,14 @@ fn get_client() -> &'static Client {
     CLIENT.get_or_init(|| {
         Client::builder()
             .timeout(std::time::Duration::from_secs(180))
+            .pool_max_idle_per_host(10)  // Connection pooling
             .build()
             .expect("Failed to build HTTP client")
     })
 }
 
+/// LLM generate (non-streaming, reqwest)
+/// httpx'ten ~10x hızlı, connection pooling ile memory-efficient
 #[pyfunction]
 pub fn llm_generate_sync(
     base_url: String,
