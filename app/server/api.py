@@ -104,7 +104,7 @@ async def voice_chat(
     sid = session_id or store.new_session_id()
     request_start = time.monotonic()
     transcript, detected_lang = await stt.transcribe(data)
-    print("⏱️  STT: %.2fs (lang=%s)", time.monotonic() - request_start, detected_lang)
+    print(f"⏱️  STT: {time.monotonic() - request_start:.2f}s lang={detected_lang}")
     if not transcript:
         return VoiceResponse(
             status="success", transcript="", response="", session_id=sid, audio_url=None
@@ -143,7 +143,7 @@ async def voice_chat_stream(
     sid = session_id or store.new_session_id()
     request_start = time.monotonic()
     transcript, detected_lang = await stt.transcribe(data)
-    print("⏱️  STT: %.2fs (lang=%s)", time.monotonic() - request_start, detected_lang)
+    print(f"⏱️  STT: {time.monotonic() - request_start:.2f}s lang={detected_lang}")
     if not transcript:
 
         async def empty_stream():
@@ -169,7 +169,7 @@ async def voice_chat_stream(
         async for event in agent.run_stream(messages, session_id=sid, detected_lang=detected_lang):
             if event["type"] == "token":
                 if not first_token_logged:
-                    print("⏱️  First token: %.2fs", time.monotonic() - request_start)
+                    print(f"⏱️  First token: {time.monotonic() - request_start:.2f}s")
                     first_token_logged = True
                 sentence_buffer += event["content"]
 
@@ -217,20 +217,27 @@ async def clear_session(session_id: str) -> dict[str, str]:
 
 
 def _should_flush_sentence(buffer: str) -> bool:
-    """Akıllı cümle detection — ilk audio chunk'ı erken gönderir.
-
-    - Nokta/soru/unlem → her zaman böl
-    - Virgül + 8+ kelime → böl (uzun cümle bekletme)
-    - 15+ kelime → punctuation beklemeden böl
-    """
+    """Agresif cümle detection — ilk audio chunk'ı erken gönder."""
     text = buffer.strip()
     if not text:
         return False
+
+    word_count = len(text.split())
+    print(f"🔤 Sentence check: {text[:60]!r} | words={word_count}", flush=True)
+
     if any(text.endswith(p) for p in [".", "?", "!", "。", "？", "！"]):
+        print(f"  ✅ Flush: punctuation | {text!r}", flush=True)
         return True
-    if text.endswith(",") and len(text.split()) >= 8:
+    if text.endswith(",") and word_count >= 4:
+        print(f"  ✅ Flush: comma + {word_count} words", flush=True)
         return True
-    return len(text.split()) >= 15
+    if text.endswith(":") and word_count >= 3:
+        print("  ✅ Flush: colon", flush=True)
+        return True
+    if word_count >= 6:
+        print(f"  ✅ Flush: {word_count} words", flush=True)
+        return True
+    return False
 
 
 def _resolve_tts_lang(detected_lang: str) -> str:

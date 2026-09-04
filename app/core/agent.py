@@ -97,6 +97,62 @@ async def run(
     return fallback.strip(), history
 
 
+async def _execute_tools_only(
+    messages: list[dict[str, str]],
+    session_id: str,
+    detected_lang: str = "tr",
+) -> list[dict[str, str]]:
+    """Tool call'larını yap, güncellenmiş messages'i döndür (final response üretmez).
+
+    Optimizasyon: Her iteration'da tool schema gönder (LLM tool call yapabilir).
+    """
+    tools_schema = registry.get_tools_schema()
+    history = list(messages)
+
+    # Language hint ekle
+    hint = LANG_HINT.get(detected_lang, LANG_HINT["tr"])
+    for i in range(len(history) - 1, -1, -1):
+        if history[i]["role"] == "user":
+            history[i]["content"] = f"{hint}\n\n{history[i]['content']}"
+            break
+
+    for iteration in range(MAX_ITERATIONS):
+        log.info("=== Tool execution iteration %d ===", iteration)
+        response_data = await llm_client.generate(history, tools=tools_schema, stream=False)
+
+        if "choices" not in response_data or not response_data["choices"]:
+            log.error("Invalid response: %s", response_data)
+            return history
+
+        message = response_data["choices"][0]["message"]
+        history.append(message)
+
+        tool_calls = message.get("tool_calls")
+
+        if not tool_calls:
+            # Tool call yok, son assistant message'ı sil (streaming'de yeniden üretilecek)
+            if history and history[-1]["role"] == "assistant":
+                history.pop()
+            return history
+
+        # Tool çağır
+        for tc in tool_calls:
+            fn_name = tc["function"]["name"]
+            try:
+                args = json.loads(tc["function"]["arguments"])
+            except json.JSONDecodeError:
+                args = {}
+
+            args["session_id"] = session_id
+            log.info("Tool call: %s(%s)", fn_name, args)
+            result = registry.call_tool(fn_name, args)
+            log.info("Tool result: %s", result[:200])
+
+            history.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
+
+    return history
+
+
 async def run_stream(
     messages: list[dict[str, str]],
     session_id: str,
@@ -104,8 +160,8 @@ async def run_stream(
 ) -> AsyncGenerator[dict, None]:
     """Agent'i streaming modda calistirir.
 
-    Tool-requiring sorularda: tool call yap, sonra final response'u streaming olarak dön.
-    Conversational sorularda: direkt streaming.
+    Tool-requiring: tool call'larını yap, sonra final response'u streaming olarak üret.
+    Conversational: direkt streaming.
     """
     last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
 
@@ -114,14 +170,31 @@ async def run_stream(
     needs_tools = any(kw in last_user.lower() for kw in tool_keywords)
 
     if needs_tools:
-        log.info("Tool-requiring query, running tools then streaming final response")
-        # Tool call'ları non-streaming ile yap
-        final_text, _history = await run(messages, session_id, detected_lang=detected_lang)
-        # Final response'u tek seferde gönder (tool sonrası LLM text üretiyor)
-        yield {"type": "done", "full_response": final_text}
+        log.info("Tool-requiring query, executing tools then streaming final response")
+        # Tool call'larını yap (non-streaming, hızlı)
+        history = await _execute_tools_only(messages, session_id, detected_lang)
+
+        # Final response'u streaming ile üret (tools YOK, sadece text)
+        full_response = ""
+
+        stream = await llm_client.generate(history, tools=None, stream=True)
+
+        async for chunk in stream:
+            if "choices" not in chunk or not chunk["choices"]:
+                continue
+
+            choice = chunk["choices"][0]
+            delta = choice.get("delta", {})
+            content = delta.get("content")
+
+            if content:
+                full_response += content
+                yield {"type": "token", "content": content}
+
+        yield {"type": "done", "full_response": full_response}
         return
 
-    # Conversational soru — streaming
+    # Conversational soru — direkt streaming
     log.info("Conversational query, streaming")
 
     # Language hint ekle
@@ -134,10 +207,7 @@ async def run_stream(
     full_response = ""
     stream = await llm_client.generate(messages, tools=None, stream=True)
 
-    chunk_count = 0
     async for chunk in stream:
-        chunk_count += 1
-
         if "choices" not in chunk or not chunk["choices"]:
             continue
 
@@ -147,8 +217,6 @@ async def run_stream(
 
         if content:
             full_response += content
-            log.debug("Streamed token: %r", content)
             yield {"type": "token", "content": content}
 
-    log.info("Stream finished, total chunks: %d", chunk_count)
     yield {"type": "done", "full_response": full_response}
