@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 120
 
     # STT (faster-whisper)
-    stt_model_size: str = "small"
+    stt_model_size: str = "tiny"
     stt_language: str = ""
 
     # Memory

@@ -2,6 +2,7 @@
 
 import json
 import logging
+import time
 from collections.abc import AsyncGenerator
 
 from app.llm import client as llm_client
@@ -10,6 +11,8 @@ from app.tools import registry
 log = logging.getLogger("miralas.agent")
 
 MAX_ITERATIONS = 4
+MAX_RETRIES = 2
+RETRY_DELAY = 1.0
 
 LANG_HINT = {
     "tr": "[Sistem: Müşteri TÜRKÇE konuşuyor. Yanıtın TAMAMEN Türkçe olmalı.]",
@@ -23,6 +26,19 @@ MENU_TRIGGERS = ["menü", "menu", "ne var", "ürün", "urun", "satıyor", "ne su
 
 def _needs_menu_tool(user_message: str) -> bool:
     return any(kw in user_message.lower() for kw in MENU_TRIGGERS)
+
+
+async def _generate_with_retry(messages, tools=None, stream=False):
+    """LLM call with retry logic."""
+    for attempt in range(MAX_RETRIES):
+        try:
+            return await llm_client.generate(messages, tools=tools, stream=stream)
+        except Exception as exc:
+            if attempt == MAX_RETRIES - 1:
+                log.error("LLM call failed after %d attempts: %s", MAX_RETRIES, exc)
+                raise
+            log.warning("LLM call failed (attempt %d/%d): %s", attempt + 1, MAX_RETRIES, exc)
+            time.sleep(RETRY_DELAY)
 
 
 async def run(
@@ -44,7 +60,7 @@ async def run(
 
     for iteration in range(MAX_ITERATIONS):
         log.info("=== Agent iteration %d, %d messages ===", iteration, len(history))
-        response_data = await llm_client.generate(history, tools=tools_schema, stream=False)
+        response_data = await _generate_with_retry(history, tools=tools_schema, stream=False)
 
         if "choices" not in response_data or not response_data["choices"]:
             log.error("Invalid response: %s", response_data)
@@ -86,8 +102,12 @@ async def run(
             args["session_id"] = session_id
 
             log.info("Tool call: %s(%s)", fn_name, args)
-            result = registry.call_tool(fn_name, args)
-            log.info("Tool result: %s", result[:200])
+            try:
+                result = registry.call_tool(fn_name, args)
+                log.info("Tool result: %s", result[:200])
+            except Exception as exc:
+                log.error("Tool call failed: %s(%s) → %s", fn_name, args, exc)
+                result = json.dumps({"error": str(exc)})
 
             history.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
 
@@ -102,10 +122,7 @@ async def _execute_tools_only(
     session_id: str,
     detected_lang: str = "tr",
 ) -> list[dict[str, str]]:
-    """Tool call'larını yap, güncellenmiş messages'i döndür (final response üretmez).
-
-    Optimizasyon: Her iteration'da tool schema gönder (LLM tool call yapabilir).
-    """
+    """Tool call'larını yap, güncellenmiş messages'i döndür (final response üretmez)."""
     tools_schema = registry.get_tools_schema()
     history = list(messages)
 
@@ -118,7 +135,7 @@ async def _execute_tools_only(
 
     for iteration in range(MAX_ITERATIONS):
         log.info("=== Tool execution iteration %d ===", iteration)
-        response_data = await llm_client.generate(history, tools=tools_schema, stream=False)
+        response_data = await _generate_with_retry(history, tools=tools_schema, stream=False)
 
         if "choices" not in response_data or not response_data["choices"]:
             log.error("Invalid response: %s", response_data)
@@ -145,8 +162,12 @@ async def _execute_tools_only(
 
             args["session_id"] = session_id
             log.info("Tool call: %s(%s)", fn_name, args)
-            result = registry.call_tool(fn_name, args)
-            log.info("Tool result: %s", result[:200])
+            try:
+                result = registry.call_tool(fn_name, args)
+                log.info("Tool result: %s", result[:200])
+            except Exception as exc:
+                log.error("Tool call failed: %s(%s) → %s", fn_name, args, exc)
+                result = json.dumps({"error": str(exc)})
 
             history.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
 
@@ -158,11 +179,7 @@ async def run_stream(
     session_id: str,
     detected_lang: str = "tr",
 ) -> AsyncGenerator[dict, None]:
-    """Agent'i streaming modda calistirir.
-
-    Tool-requiring: tool call'larını yap, sonra final response'u streaming olarak üret.
-    Conversational: direkt streaming.
-    """
+    """Agent'i streaming modda calistirir."""
     last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
 
     # Tool gerektiren soru mu?
@@ -177,7 +194,7 @@ async def run_stream(
         # Final response'u streaming ile üret (tools YOK, sadece text)
         full_response = ""
 
-        stream = await llm_client.generate(history, tools=None, stream=True)
+        stream = await _generate_with_retry(history, tools=None, stream=True)
 
         async for chunk in stream:
             if "choices" not in chunk or not chunk["choices"]:
@@ -205,7 +222,7 @@ async def run_stream(
             break
 
     full_response = ""
-    stream = await llm_client.generate(messages, tools=None, stream=True)
+    stream = await _generate_with_retry(messages, tools=None, stream=True)
 
     async for chunk in stream:
         if "choices" not in chunk or not chunk["choices"]:

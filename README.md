@@ -52,3 +52,7 @@ default debug build while developing.
 - Faster-Whisper speech-to-text and Edge TTS audio responses
 - Session-based conversation memory
 - Business tools for menus, carts, orders, and appointments
+
+
+
+
