@@ -15,7 +15,7 @@ from starlette.staticfiles import StaticFiles
 
 from app.core import agent
 from app.core.types import ChatRequest, ChatResponse, VoiceResponse
-from app.llm.prompts import VOICE_SYSTEM_PROMPT
+from app.llm.prompts import get_system_prompt
 from app.memory.store import store
 from app.voice import stt
 
@@ -27,10 +27,14 @@ async def lifespan(app: FastAPI):
     stt.warmup()
     os.makedirs("static/audio", exist_ok=True)
     app.mount("/static", StaticFiles(directory="static"), name="static")
-    # TTS warmup: edge-tts connection'ı önceden kur (ilk istek hızlı olsun)
-    warmup_task = asyncio.create_task(_warmup_tts())
+    # Warmup: TTS + LLM (ilk istek hızlı olsun)
+    warmup_tasks = [
+        asyncio.create_task(_warmup_tts()),
+        asyncio.create_task(_warmup_tts()),
+    ]
     yield
-    warmup_task.cancel()
+    for t in warmup_tasks:
+        t.cancel()
 
 
 async def _warmup_tts():
@@ -70,7 +74,7 @@ async def stream_chat(request: ChatRequest):
     async def event_generator():
         history = store.get(session_id)
         messages = [
-            {"role": "system", "content": VOICE_SYSTEM_PROMPT},
+            {"role": "system", "content": get_system_prompt("tr")},
             *history,
             {"role": "user", "content": request.prompt},
         ]
@@ -156,7 +160,7 @@ async def voice_chat_stream(
     async def event_generator():
         history = store.get(sid)
         messages = [
-            {"role": "system", "content": VOICE_SYSTEM_PROMPT},
+            {"role": "system", "content": get_system_prompt(detected_lang)},
             *history,
             {"role": "user", "content": transcript},
         ]
@@ -165,6 +169,15 @@ async def voice_chat_stream(
         sentence_buffer = ""
         first_token_logged = False
         first_audio_logged = False
+
+        # Tool gerektiren soruysa hemen "düşünme sesi" gönder (canlılık hissi)
+        tool_keywords = ["menü", "menu", "sipariş", "sepet", "burger", "pizza", "cola", "randevu"]
+        if any(kw in transcript.lower() for kw in tool_keywords):
+            filler_text = FILLER.get(tts_lang, FILLER["tr"])
+            async for audio_chunk in tts.synthesize_stream(filler_text, language=tts_lang):
+                audio_b64 = base64.b64encode(audio_chunk).decode("utf-8")
+                yield f"data: {json.dumps({'audio': audio_b64})}\n\n"
+            print(f"🗣️  Filler sent: {filler_text}", flush=True)
 
         async for event in agent.run_stream(messages, session_id=sid, detected_lang=detected_lang):
             if event["type"] == "token":
@@ -240,6 +253,14 @@ def _should_flush_sentence(buffer: str) -> bool:
     return False
 
 
+FILLER = {
+    "tr": "Hımm, bir bakayım.",
+    "en": "Hmm, let me see.",
+    "uz": "Hmm, ko'rib turaman.",
+    "ru": "Хм, сейчас посмотрю.",
+}
+
+
 def _resolve_tts_lang(detected_lang: str) -> str:
     """Detected language'i TTS voice mapping'e çevir. Desteklenmeyen dil → tr."""
     supported = {"tr", "en", "uz", "ru"}
@@ -249,7 +270,7 @@ def _resolve_tts_lang(detected_lang: str) -> str:
 async def _run_agent(user_message: str, session_id: str, detected_lang: str = "tr") -> str:
     history = store.get(session_id)
     messages = [
-        {"role": "system", "content": VOICE_SYSTEM_PROMPT},
+        {"role": "system", "content": get_system_prompt(detected_lang)},
         *history,
         {"role": "user", "content": user_message},
     ]

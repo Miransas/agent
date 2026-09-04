@@ -14,12 +14,6 @@ MAX_ITERATIONS = 4
 MAX_RETRIES = 2
 RETRY_DELAY = 1.0
 
-LANG_HINT = {
-    "tr": "[Sistem: Müşteri TÜRKÇE konuşuyor. Yanıtın TAMAMEN Türkçe olmalı.]",
-    "en": "[System: Customer speaks ENGLISH. Your response MUST be entirely in English.]",
-    "uz": "[Tizim: Mijoz O'ZBEKCHA gaplashmoqda. Javobingiz TO'LIQ o'zbek tilida bo'lishi kerak.]",
-    "ru": "[Система: Клиент говорит по-РУССКИ. Ваш ответ ДОЛЖЕН быть полностью на русском.]",
-}
 
 MENU_TRIGGERS = ["menü", "menu", "ne var", "ürün", "urun", "satıyor", "ne sunuyorsunuz"]
 
@@ -49,14 +43,6 @@ async def run(
     """Agent'i calistirir (non-streaming). Returns (final_text, full_history)."""
     tools_schema = registry.get_tools_schema()
     history = list(messages)
-
-    # Language hint'i son user message'a prepend et
-    hint = LANG_HINT.get(detected_lang, LANG_HINT["tr"])
-    for i in range(len(history) - 1, -1, -1):
-        if history[i]["role"] == "user":
-            history[i]["content"] = f"{hint}\n\n{history[i]['content']}"
-            log.info("Language hint injected: %s", detected_lang)
-            break
 
     for iteration in range(MAX_ITERATIONS):
         log.info("=== Agent iteration %d, %d messages ===", iteration, len(history))
@@ -125,13 +111,6 @@ async def _execute_tools_only(
     """Tool call'larını yap, güncellenmiş messages'i döndür (final response üretmez)."""
     tools_schema = registry.get_tools_schema()
     history = list(messages)
-
-    # Language hint ekle
-    hint = LANG_HINT.get(detected_lang, LANG_HINT["tr"])
-    for i in range(len(history) - 1, -1, -1):
-        if history[i]["role"] == "user":
-            history[i]["content"] = f"{hint}\n\n{history[i]['content']}"
-            break
 
     for iteration in range(MAX_ITERATIONS):
         log.info("=== Tool execution iteration %d ===", iteration)
@@ -213,13 +192,6 @@ async def run_stream(
 
     # Conversational soru — direkt streaming
     log.info("Conversational query, streaming")
-
-    # Language hint ekle
-    hint = LANG_HINT.get(detected_lang, LANG_HINT["tr"])
-    for i in range(len(messages) - 1, -1, -1):
-        if messages[i]["role"] == "user":
-            messages[i]["content"] = f"{hint}\n\n{messages[i]['content']}"
-            break
 
     full_response = ""
     stream = await _generate_with_retry(messages, tools=None, stream=True)
