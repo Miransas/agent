@@ -23,6 +23,13 @@ class Settings(BaseSettings):
     memory_max_messages: int = 20  # context penceresi (8b icin guvenli)
     memory_ttl_seconds: int = 3600  # 1 saat sonra oturum unutulur
 
+    # Guvenlik / kaynak limitleri
+    max_upload_bytes: int = 15 * 1024 * 1024  # ses dosyasi ust siniri (~15MB)
+    audio_retention_seconds: int = 3600  # static/audio'daki eski dosyalar bu sureden sonra silinir
+
+    # Logging
+    log_level: str = "INFO"  # .env'den MIRALAS_LOG_LEVEL=DEBUG ile degistir
+
     # Server
     host: str = "127.0.0.1"
     port: int = 8000

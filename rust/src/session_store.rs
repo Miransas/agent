@@ -22,3 +22,13 @@ pub fn session_get(session_id: String) -> PyResult<Option<String>> {
         None => Ok(None),
     }
 }
+
+/// Suresi gecmis session'lari DashMap'ten gercekten siler. Donen deger: silinen sayisi.
+#[pyfunction]
+pub fn session_sweep(ttl_secs: u64) -> PyResult<usize> {
+    let now = Instant::now();
+    let store = get_store();
+    let before = store.len();
+    store.retain(|_, (ts, _)| now.duration_since(*ts).as_secs() <= ttl_secs);
+    Ok(before - store.len())
+}

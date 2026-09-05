@@ -1,11 +1,21 @@
 """Bellek-ici konusma magazasi.
-Rust build edilmisse DashMap (lock-free, ~3x hizli), yoksa Python dict fallback.
+Rust build edilmisse DashMap (lock-free), yoksa Python dict fallback.
+
+NOT: Tek process icin tasarlandi. `--workers > 1` ile calistirilirsa her
+worker'in kendi ayri store'u olur, ayni session_id farkli worker'a dusunce
+gecmis kaybolur. Coklu worker'a gecerken Redis gibi paylasilan bir store'a tasi.
 """
 
+import asyncio
 import json
+import logging
 import time
 import uuid
 from collections import deque
+
+from app.config.settings import settings
+
+log = logging.getLogger("miralas.memory")
 
 try:
     import miralas_core
@@ -23,10 +33,10 @@ class SessionStore:
         self._max_messages = max_turns * 2  # user + assistant
 
         if _RUST_AVAILABLE:
-            print("✅ Session store: Rust (DashMap)")
+            log.info("Session store: Rust (DashMap)")
             self._rust_mode = True
         else:
-            print("⚠️  Session store: Python fallback (dict)")
+            log.warning("Session store: Python fallback (dict)")
             self._rust_mode = False
             self._sessions: dict[str, tuple[float, deque[dict[str, str]]]] = {}
 
@@ -40,22 +50,21 @@ class SessionStore:
                 return []
             try:
                 payload = json.loads(data)
-                ts = payload.get("ts", 0)
-                if time.monotonic() - ts > self._ttl:
-                    miralas_core.session_set(session_id, json.dumps({"ts": 0, "messages": []}))
-                    return []
-                return payload.get("messages", [])
             except json.JSONDecodeError:
                 return []
-        else:
-            entry = self._sessions.get(session_id)
-            if entry is None:
+            if time.monotonic() - payload.get("ts", 0) > self._ttl:
+                miralas_core.session_set(session_id, json.dumps({"ts": 0, "messages": []}))
                 return []
-            ts, messages = entry
-            if time.monotonic() - ts > self._ttl:
-                del self._sessions[session_id]
-                return []
-            return list(messages)
+            return payload.get("messages", [])
+
+        entry = self._sessions.get(session_id)
+        if entry is None:
+            return []
+        ts, messages = entry
+        if time.monotonic() - ts > self._ttl:
+            del self._sessions[session_id]
+            return []
+        return list(messages)
 
     def add(self, session_id: str, role: str, content: str) -> None:
         if self._rust_mode:
@@ -63,27 +72,23 @@ class SessionStore:
             if data is None:
                 messages: deque[dict[str, str]] = deque(maxlen=self._max_messages)
             else:
-                payload = json.loads(data)
+                try:
+                    payload = json.loads(data)
+                except json.JSONDecodeError:
+                    payload = {}
                 messages = deque(payload.get("messages", []), maxlen=self._max_messages)
 
             messages.append({"role": role, "content": content})
             miralas_core.session_set(
                 session_id,
-                json.dumps(
-                    {
-                        "ts": time.monotonic(),
-                        "messages": list(messages),
-                    }
-                ),
+                json.dumps({"ts": time.monotonic(), "messages": list(messages)}),
             )
-        else:
-            entry = self._sessions.get(session_id)
-            if entry is None:
-                messages: deque[dict[str, str]] = deque(maxlen=self._max_messages)
-            else:
-                messages = entry[1]
-            messages.append({"role": role, "content": content})
-            self._sessions[session_id] = (time.monotonic(), messages)
+            return
+
+        entry = self._sessions.get(session_id)
+        messages = entry[1] if entry else deque(maxlen=self._max_messages)
+        messages.append({"role": role, "content": content})
+        self._sessions[session_id] = (time.monotonic(), messages)
 
     def clear(self, session_id: str) -> None:
         if self._rust_mode:
@@ -91,5 +96,28 @@ class SessionStore:
         else:
             self._sessions.pop(session_id, None)
 
+    def sweep_expired(self) -> int:
+        """Suresi gecmis session'lari gercekten siler."""
+        if self._rust_mode:
+            return miralas_core.session_sweep(int(self._ttl))
 
-store = SessionStore(ttl_seconds=1800, max_turns=12)
+        now = time.monotonic()
+        expired = [sid for sid, (ts, _) in self._sessions.items() if now - ts > self._ttl]
+        for sid in expired:
+            del self._sessions[sid]
+        return len(expired)
+
+
+store = SessionStore(
+    ttl_seconds=settings.memory_ttl_seconds,
+    max_turns=settings.memory_max_messages // 2,
+)
+
+
+async def start_cleanup_task(interval_seconds: int = 600) -> None:
+    """Periyodik olarak suresi gecmis session'lari temizler. lifespan'da baslatilir."""
+    while True:
+        await asyncio.sleep(interval_seconds)
+        removed = store.sweep_expired()
+        if removed:
+            log.info("Session cleanup: %d suresi gecmis session silindi", removed)

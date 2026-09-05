@@ -10,18 +10,23 @@ from app.config.settings import settings
 log = logging.getLogger("miralas.stt")
 
 _MODEL: WhisperModel | None = None
+_MODEL_LOCK = threading.Lock()
 
 
 def _get_model() -> WhisperModel:
     global _MODEL
     if _MODEL is None:
-        log.info("Loading Whisper model: %s", settings.stt_model_size)
-        _MODEL = WhisperModel(
-            settings.stt_model_size,
-            device="auto",  # Mac'te CPU'ya duser (CTranslate2 Metal yok)
-            compute_type="int8",  # CPU icin en verimli
-        )
-        log.info("Whisper model ready")
+        with _MODEL_LOCK:
+            # Lock alindiktan sonra tekrar kontrol et — baska bir thread
+            # lock'u beklerken zaten yuklemis olabilir.
+            if _MODEL is None:
+                log.info("Loading Whisper model: %s", settings.stt_model_size)
+                _MODEL = WhisperModel(
+                    settings.stt_model_size,
+                    device="auto",  # Mac'te CPU'ya duser (CTranslate2 Metal yok)
+                    compute_type="int8",  # CPU icin en verimli
+                )
+                log.info("Whisper model ready")
     return _MODEL
 
 

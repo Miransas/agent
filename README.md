@@ -51,8 +51,4 @@ default debug build while developing.
 - Text chat, streaming responses, and voice conversations
 - Faster-Whisper speech-to-text and Edge TTS audio responses
 - Session-based conversation memory
-- Business tools for menus, carts, orders, and appointments
-
-
-
-
+- Business tools for menus, carts, orders, and appointments.
