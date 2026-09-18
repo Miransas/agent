@@ -5,6 +5,7 @@ edition = "2021"
 
 [lib]
 name = "miralas_core"
+path = "rust/src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]

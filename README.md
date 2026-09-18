@@ -35,11 +35,11 @@ curl -X POST localhost:8000/api/voice -F "audio=@test.wav"
 
 ## Rust Optimization
 
-The Rust crate (`rust/`) provides the performance-sensitive core through
-PyO3. Build its optimized release profile with:
+The Rust crate uses sources under `rust/` and is configured from the repository
+root. Build its optimized release profile with:
 
 ```bash
-cargo build --manifest-path rust/Cargo.toml --release
+cargo build --release
 ```
 
 Release builds use maximum compiler optimization (`opt-level = 3`) and link-time
